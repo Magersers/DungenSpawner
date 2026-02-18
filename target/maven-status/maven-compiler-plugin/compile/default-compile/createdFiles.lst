@@ -1,0 +1,13 @@
+ru/dungenspawner/manager/DungeonManager$1.class
+ru/dungenspawner/listener/DungeonListener.class
+ru/dungenspawner/model/ActiveDungeon$SavedBlock.class
+ru/dungenspawner/service/MobsRarityBridge.class
+ru/dungenspawner/manager/DungeonManager$2.class
+ru/dungenspawner/manager/DungeonManager$3.class
+ru/dungenspawner/placeholder/DungeonPlaceholderExpansion.class
+ru/dungenspawner/command/SpawnDungeonCommand.class
+ru/dungenspawner/model/ActiveDungeon.class
+ru/dungenspawner/manager/DungeonManager$SpawnResult.class
+ru/dungenspawner/manager/DungeonManager$2$1.class
+ru/dungenspawner/DungeonSpawnerPlugin.class
+ru/dungenspawner/manager/DungeonManager.class

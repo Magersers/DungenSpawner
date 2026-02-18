@@ -1,0 +1,26 @@
+world: world
+schematic-path: plugins/WorldEdit/schematics/simple-church.schematic
+spawn-center-x: 0
+spawn-center-z: 0
+spawn-radius: 2500
+max-active-dungeons: 5
+dungeon-lifetime-seconds: 600
+mobs-per-dungeon-min: 10
+mobs-per-dungeon-max: 15
+rarity-order:
+  - common
+  - uncommon
+  - rare
+  - epic
+  - legendary
+  - god
+rarity-mobs:
+  common: [ZOMBIE, SKELETON]
+  uncommon: [SKELETON, SPIDER]
+  rare: [HUSK, STRAY]
+  epic: [WITHER_SKELETON, BOGGED]
+  legendary: [BLAZE, PIGLIN_BRUTE]
+  god: [WARDEN, EVOKER]
+announce-prefix: "§6[Данжи] §r"
+decay-steps: 20
+decay-interval-ticks: 40
