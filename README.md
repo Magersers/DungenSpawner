@@ -1,38 +1,35 @@
 # DungenSpawner
 
-Плагин для Paper 1.21.x, который спавнит данжи из schematic, интегрируется с WorldEdit 7.4.0 и MobsRarity API.
+Плагин для Paper, который спавнит данжи из schematic, интегрируется с WorldEdit и MobsRarity API.
 
-## Требования к сборке
+## Матрица сборки по Java
 
-- **JDK 21+** (обязательно)
-- Maven 3.9+
+По умолчанию проект теперь собирается на **JDK 17** (чтобы не падать с `release version 21 not supported` в окружениях со старой Java).
 
-Почему так: `paper-api 1.21.1-R0.1-SNAPSHOT` и `worldedit-bukkit 7.4.0` скомпилированы под class file version 65 (Java 21). Если собирать на JDK 17, будет ошибка вида:
+Автопрофиль Maven переключает зависимости при JDK 21+:
 
-- `class file has wrong version 65.0, should be 61.0`
-- `cannot access org.bukkit...`
+- **JDK 17–20**: `paper-api 1.20.6`, `worldedit-bukkit 7.3.0`, `release=17`
+- **JDK 21+**: `paper-api 1.21.1`, `worldedit-bukkit 7.4.0`, `release=21`
 
-## Проверка окружения перед сборкой
+Это позволяет разработчикам на JDK 17 хотя бы компилировать и проверять проект, а для целевого Paper 1.21.x использовать JDK 21+.
+
+## Проверка окружения
 
 ```bash
 mvn -v
 java -version
 ```
 
-Обе команды должны показывать Java 21+.
-
-Если Maven использует не ту Java, выставите `JAVA_HOME` на JDK 21 перед сборкой.
-
-Пример для Linux/macOS:
-
-```bash
-export JAVA_HOME=/path/to/jdk-21
-export PATH="$JAVA_HOME/bin:$PATH"
-mvn -v
-```
-
 ## Сборка
 
 ```bash
 mvn -DskipTests package
+```
+
+## Явно собирать под Paper 1.21.x
+
+Даже на JDK 21+ профиль активируется автоматически. При необходимости можно включить вручную:
+
+```bash
+mvn -Pjava21-paper121 -DskipTests package
 ```
