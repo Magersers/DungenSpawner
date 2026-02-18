@@ -78,11 +78,9 @@ public class DungeonManager {
                     }
                 }
                 for (ActiveDungeon dungeon : cleared) {
-                    String clearers = dungeon.getClearingPlayers().isEmpty()
-                            ? "неизвестно"
-                            : String.join(", ", dungeon.getClearingPlayers());
-                    Bukkit.broadcastMessage(prefix() + "Данж §e" + dungeon.getId() + " §rзачищен игроками: §a" + clearers);
-                    removeDungeon(dungeon, false, "зачищен игроками: " + clearers);
+                    String clearMessage = buildClearMessage(dungeon);
+                    Bukkit.broadcastMessage(prefix() + clearMessage);
+                    removeDungeon(dungeon, false, clearMessage);
                 }
                 for (ActiveDungeon dungeon : expired) {
                     expireDungeon(dungeon);
@@ -232,7 +230,7 @@ public class DungeonManager {
                 return false;
             }
             LivingEntity mob = mobResult.entity();
-            mob.setCustomName("§6[Данж] §f" + capitalizeRarity(dungeon.getRarity()) + " §7" + prettifyType(mobResult.type()));
+            mob.setCustomName(withDungeonPrefix(mob.getCustomName(), "§6"));
             mob.setCustomNameVisible(true);
             dungeon.getMobs().add(mob.getUniqueId());
             mobToDungeon.put(mob.getUniqueId(), dungeon.getId());
@@ -248,8 +246,7 @@ public class DungeonManager {
             return false;
         }
         LivingEntity boss = bossResult.entity();
-        EntityType bossType = bossResult.type();
-        boss.setCustomName("§c[Данж] §f" + capitalizeRarity(dungeon.getBossRarity()) + " §7" + prettifyType(bossType));
+        boss.setCustomName(withDungeonPrefix(boss.getCustomName(), "§c"));
         boss.setCustomNameVisible(true);
         dungeon.getMobs().add(boss.getUniqueId());
         mobToDungeon.put(boss.getUniqueId(), dungeon.getId());
@@ -277,6 +274,7 @@ public class DungeonManager {
         dungeon.getMobs().remove(mobId);
         if (killer != null) {
             dungeon.getClearingPlayers().add(killer.getName());
+            dungeon.getKillsByPlayer().merge(killer.getName(), 1, Integer::sum);
         }
 
         recalculateAliveMobs(dungeon);
@@ -289,11 +287,9 @@ public class DungeonManager {
         }
 
         if (left == 0) {
-            String clearers = dungeon.getClearingPlayers().isEmpty()
-                    ? "неизвестно"
-                    : String.join(", ", dungeon.getClearingPlayers());
-            Bukkit.broadcastMessage(prefix() + "Данж §e" + dungeon.getId() + " §rзачищен игроками: §a" + clearers);
-            removeDungeon(dungeon, false, "зачищен игроками: " + clearers);
+            String clearMessage = buildClearMessage(dungeon);
+            Bukkit.broadcastMessage(prefix() + clearMessage);
+            removeDungeon(dungeon, false, clearMessage);
         }
     }
 
@@ -523,10 +519,81 @@ public class DungeonManager {
     }
 
     private Location randomLocationInside(ActiveDungeon dungeon) {
-        int x = ThreadLocalRandom.current().nextInt(dungeon.getMinX(), dungeon.getMaxX() + 1);
-        int z = ThreadLocalRandom.current().nextInt(dungeon.getMinZ(), dungeon.getMaxZ() + 1);
-        int y = ThreadLocalRandom.current().nextInt(dungeon.getMinY(), dungeon.getMaxY() + 1);
-        return new Location(dungeon.getWorld(), x + 0.5, y, z + 0.5);
+        Location valid = findValidMobSpawnLocation(dungeon);
+        if (valid != null) {
+            return valid;
+        }
+        Location center = centerLocation(dungeon);
+        return new Location(dungeon.getWorld(), center.getX(), dungeon.getMinY() + 1, center.getZ());
+    }
+
+
+    private Location findValidMobSpawnLocation(ActiveDungeon dungeon) {
+        World world = dungeon.getWorld();
+        int minY = dungeon.getMinY();
+        int maxY = Math.max(minY + 1, dungeon.getMaxY() - 1);
+        for (int attempt = 0; attempt < 80; attempt++) {
+            int x = ThreadLocalRandom.current().nextInt(dungeon.getMinX(), dungeon.getMaxX() + 1);
+            int z = ThreadLocalRandom.current().nextInt(dungeon.getMinZ(), dungeon.getMaxZ() + 1);
+            int y = ThreadLocalRandom.current().nextInt(minY, maxY + 1);
+            if (isValidSpawnSpot(world, x, y, z)) {
+                return new Location(world, x + 0.5, y, z + 0.5);
+            }
+        }
+
+        for (int y = minY; y <= maxY; y++) {
+            for (int x = dungeon.getMinX(); x <= dungeon.getMaxX(); x++) {
+                for (int z = dungeon.getMinZ(); z <= dungeon.getMaxZ(); z++) {
+                    if (isValidSpawnSpot(world, x, y, z)) {
+                        return new Location(world, x + 0.5, y, z + 0.5);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean isValidSpawnSpot(World world, int x, int y, int z) {
+        if (y <= world.getMinHeight() || y >= world.getMaxHeight() - 1) {
+            return false;
+        }
+        Material feet = world.getBlockAt(x, y, z).getType();
+        Material head = world.getBlockAt(x, y + 1, z).getType();
+        Material below = world.getBlockAt(x, y - 1, z).getType();
+        return feet.isAir() && head.isAir() && below.isSolid();
+    }
+
+    private String withDungeonPrefix(String originalName, String color) {
+        if (originalName == null || originalName.isBlank()) {
+            return color + "[Данж]";
+        }
+        return color + "[Данж] §r" + originalName;
+    }
+
+    private String buildClearMessage(ActiveDungeon dungeon) {
+        int playersCount = dungeon.getClearingPlayers().size();
+        String who;
+        if (playersCount == 1) {
+            who = "игроком";
+        } else if (playersCount > 1) {
+            who = "игроками";
+        } else {
+            who = "неизвестным игроком";
+        }
+
+        String clearers = dungeon.getClearingPlayers().isEmpty()
+                ? "неизвестно"
+                : String.join(", ", dungeon.getClearingPlayers());
+
+        String rating = dungeon.getKillsByPlayer().entrySet().stream()
+                .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
+                .map(entry -> entry.getKey() + " - " + entry.getValue())
+                .collect(Collectors.joining(", "));
+        if (rating.isBlank()) {
+            rating = "нет данных";
+        }
+
+        return "Данж §e" + dungeon.getId() + " §rзачищен " + who + ": §a" + clearers + " §7| Рейтинг: §f" + rating;
     }
 
     private SpawnResult trySpawnFromPool(Location location, List<EntityType> pool, String rarity) {
@@ -535,13 +602,13 @@ public class DungeonManager {
         for (EntityType type : order) {
             LivingEntity entity = mobsRarityBridge.spawnRarityMob(location, type, rarity);
             if (entity != null) {
-                return new SpawnResult(type, entity);
+                return new SpawnResult(entity);
             }
         }
         return null;
     }
 
-    private record SpawnResult(EntityType type, LivingEntity entity) {}
+    private record SpawnResult(LivingEntity entity) {}
 
     public Optional<ActiveDungeon> getDungeonByMob(UUID mobId) {
         String id = mobToDungeon.get(mobId);
@@ -621,26 +688,6 @@ public class DungeonManager {
             entity.remove();
         }
         dungeon.setTimerDisplayId(null);
-    }
-
-    private String capitalizeRarity(String rarity) {
-        if (rarity == null || rarity.isBlank()) {
-            return "Unknown";
-        }
-        String lower = rarity.toLowerCase(Locale.ROOT);
-        return Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
-    }
-
-    private String prettifyType(EntityType type) {
-        String[] parts = type.name().toLowerCase(Locale.ROOT).split("_");
-        List<String> pretty = new ArrayList<>();
-        for (String part : parts) {
-            if (part.isBlank()) {
-                continue;
-            }
-            pretty.add(Character.toUpperCase(part.charAt(0)) + part.substring(1));
-        }
-        return String.join(" ", pretty);
     }
 
     private String prefix() {
