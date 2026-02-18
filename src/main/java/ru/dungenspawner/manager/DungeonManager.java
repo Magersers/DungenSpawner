@@ -20,6 +20,7 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
@@ -30,7 +31,16 @@ import ru.dungenspawner.service.MobsRarityBridge;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 public class DungeonManager {
@@ -46,6 +56,23 @@ public class DungeonManager {
 
     public void scheduleRandomDailySpawns() {
         scheduleRandomDailySpawns(0L);
+    }
+
+    public void startTimerWatcher() {
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                List<ActiveDungeon> expired = new ArrayList<>();
+                for (ActiveDungeon dungeon : activeDungeons.values()) {
+                    if (dungeon.getRemainingMillis() <= 0L) {
+                        expired.add(dungeon);
+                    }
+                }
+                for (ActiveDungeon dungeon : expired) {
+                    expireDungeon(dungeon);
+                }
+            }
+        }.runTaskTimer(plugin, 20L, 20L);
     }
 
     private void scheduleRandomDailySpawns(long initialDelayTicks) {
@@ -76,6 +103,12 @@ public class DungeonManager {
         World world = Bukkit.getWorld(config.getString("world", "world"));
         if (world == null) {
             plugin.getLogger().warning("Мир для спавна данжа не найден.");
+            return false;
+        }
+
+        int maxActive = config.getInt("max-active-dungeons", 5);
+        if (activeDungeons.size() >= maxActive) {
+            plugin.getLogger().warning("Достигнут лимит активных данжей: " + maxActive);
             return false;
         }
 
@@ -117,8 +150,11 @@ public class DungeonManager {
         int maxY = base.getBlockY() + (max.getY() - origin.getY());
         int maxZ = base.getBlockZ() + (max.getZ() - origin.getZ());
 
+        long ttl = Math.max(1L, config.getLong("dungeon-lifetime-seconds", 600));
         String id = "dungeon_" + System.currentTimeMillis();
-        ActiveDungeon dungeon = new ActiveDungeon(id, rarity, bossRarity, world, minX, minY, minZ, maxX, maxY, maxZ);
+        ActiveDungeon dungeon = new ActiveDungeon(id, rarity, bossRarity, world,
+                minX, minY, minZ, maxX, maxY, maxZ,
+                System.currentTimeMillis() + ttl * 1000L);
         snapshotRegion(dungeon);
 
         pasteClipboard(clipboard, base);
@@ -131,8 +167,26 @@ public class DungeonManager {
         }
 
         Bukkit.broadcastMessage(prefix() + "Появился данж редкости §e" + rarity + "§r в мире §f" + world.getName()
-                + " §rкоординаты: §bX=" + base.getBlockX() + " Y=" + base.getBlockY() + " Z=" + base.getBlockZ());
+                + " §rкоординаты: §bX=" + base.getBlockX() + " Y=" + base.getBlockY() + " Z=" + base.getBlockZ()
+                + " §7(таймер: " + formatDuration(dungeon.getRemainingMillis()) + ")");
         return true;
+    }
+
+    public boolean removeDungeonById(String dungeonId) {
+        ActiveDungeon dungeon = activeDungeons.get(dungeonId);
+        if (dungeon == null) {
+            return false;
+        }
+        removeDungeon(dungeon, true, "удален администратором");
+        return true;
+    }
+
+    public int removeAllDungeons() {
+        List<ActiveDungeon> all = new ArrayList<>(activeDungeons.values());
+        for (ActiveDungeon dungeon : all) {
+            removeDungeon(dungeon, true, "удален администратором");
+        }
+        return all.size();
     }
 
     private boolean spawnMobsForDungeon(ActiveDungeon dungeon) {
@@ -204,9 +258,34 @@ public class DungeonManager {
         }
 
         if (left == 0) {
-            activeDungeons.remove(dungeon.getId());
             Bukkit.broadcastMessage(prefix() + "Данж §e" + dungeon.getId() + " §rзачищен!");
-            startDecayAndRestore(dungeon);
+            removeDungeon(dungeon, false, "зачищен игроками");
+        }
+    }
+
+    private void expireDungeon(ActiveDungeon dungeon) {
+        Bukkit.broadcastMessage(prefix() + "Таймер данжа §e" + dungeon.getId() + "§r истек. Данж разрушается.");
+        removeDungeon(dungeon, true, "таймер истек");
+    }
+
+    private void removeDungeon(ActiveDungeon dungeon, boolean despawnMobs, String reason) {
+        activeDungeons.remove(dungeon.getId());
+        if (despawnMobs) {
+            despawnDungeonMobs(dungeon);
+        }
+        startDecayAndRestore(dungeon);
+        plugin.getLogger().info("Данж " + dungeon.getId() + " удален: " + reason);
+    }
+
+    private void despawnDungeonMobs(ActiveDungeon dungeon) {
+        Set<UUID> tracked = Set.copyOf(dungeon.getMobs());
+        for (UUID mobId : tracked) {
+            Entity entity = Bukkit.getEntity(mobId);
+            if (entity != null && entity.isValid()) {
+                entity.remove();
+            }
+            dungeon.getMobs().remove(mobId);
+            mobToDungeon.remove(mobId);
         }
     }
 
@@ -324,7 +403,6 @@ public class DungeonManager {
         return new Location(world, x, y, z);
     }
 
-
     private File resolveSchematicFile(String configuredPath) {
         List<File> candidates = new ArrayList<>();
 
@@ -406,6 +484,47 @@ public class DungeonManager {
     public Optional<ActiveDungeon> getDungeonByMob(UUID mobId) {
         String id = mobToDungeon.get(mobId);
         return Optional.ofNullable(id).map(activeDungeons::get);
+    }
+
+    public List<ActiveDungeon> getActiveDungeons() {
+        return new ArrayList<>(activeDungeons.values());
+    }
+
+    public int getActiveDungeonCount() {
+        return activeDungeons.size();
+    }
+
+    public Optional<ActiveDungeon> getNearestDungeon(Location location) {
+        if (location == null || location.getWorld() == null) {
+            return Optional.empty();
+        }
+        return activeDungeons.values().stream()
+                .filter(d -> d.getWorld().equals(location.getWorld()))
+                .min(Comparator.comparingDouble(d -> centerLocation(d).distanceSquared(location)));
+    }
+
+    public String formatDuration(long millis) {
+        long totalSeconds = Math.max(0L, millis / 1000L);
+        long minutes = totalSeconds / 60L;
+        long seconds = totalSeconds % 60L;
+        return String.format("%02d:%02d", minutes, seconds);
+    }
+
+    public String formatAllDungeonTimers() {
+        List<ActiveDungeon> sorted = getActiveDungeons();
+        sorted.sort(Comparator.comparing(ActiveDungeon::getId));
+        List<String> parts = new ArrayList<>();
+        for (ActiveDungeon dungeon : sorted) {
+            parts.add(dungeon.getId() + "=" + formatDuration(dungeon.getRemainingMillis()));
+        }
+        return parts.isEmpty() ? "none" : String.join(", ", parts);
+    }
+
+    private Location centerLocation(ActiveDungeon dungeon) {
+        double x = (dungeon.getMinX() + dungeon.getMaxX()) / 2.0;
+        double y = (dungeon.getMinY() + dungeon.getMaxY()) / 2.0;
+        double z = (dungeon.getMinZ() + dungeon.getMaxZ()) / 2.0;
+        return new Location(dungeon.getWorld(), x, y, z);
     }
 
     private String prefix() {

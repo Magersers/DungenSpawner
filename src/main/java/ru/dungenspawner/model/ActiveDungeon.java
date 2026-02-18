@@ -22,10 +22,13 @@ public class ActiveDungeon {
     private final int maxX;
     private final int maxY;
     private final int maxZ;
+    private final long expiresAtMillis;
     private final Set<UUID> mobs = new HashSet<>();
     private final Map<Long, SavedBlock> originalBlocks = new HashMap<>();
 
-    public ActiveDungeon(String id, String rarity, String bossRarity, World world, int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+    public ActiveDungeon(String id, String rarity, String bossRarity, World world,
+                         int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+                         long expiresAtMillis) {
         this.id = id;
         this.rarity = rarity;
         this.bossRarity = bossRarity;
@@ -36,6 +39,7 @@ public class ActiveDungeon {
         this.maxX = maxX;
         this.maxY = maxY;
         this.maxZ = maxZ;
+        this.expiresAtMillis = expiresAtMillis;
     }
 
     public String getId() { return id; }
@@ -48,8 +52,13 @@ public class ActiveDungeon {
     public int getMaxX() { return maxX; }
     public int getMaxY() { return maxY; }
     public int getMaxZ() { return maxZ; }
+    public long getExpiresAtMillis() { return expiresAtMillis; }
     public Set<UUID> getMobs() { return mobs; }
     public Map<Long, SavedBlock> getOriginalBlocks() { return originalBlocks; }
+
+    public long getRemainingMillis() {
+        return Math.max(0L, expiresAtMillis - System.currentTimeMillis());
+    }
 
     public boolean contains(Location location) {
         if (location.getWorld() == null || !location.getWorld().equals(world)) {

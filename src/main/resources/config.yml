@@ -3,6 +3,8 @@ schematic-path: plugins/WorldEdit/schematics/simple-church.schematic
 spawn-center-x: 0
 spawn-center-z: 0
 spawn-radius: 2500
+max-active-dungeons: 5
+dungeon-lifetime-seconds: 600
 mobs-per-dungeon-min: 10
 mobs-per-dungeon-max: 15
 rarity-order:
