@@ -52,7 +52,8 @@ public class MobsRarityBridge {
                 }
             }
         } catch (Throwable ex) {
-            plugin.getLogger().warning("Ошибка спавна через MobsRarity: " + ex.getMessage());
+            String details = ex.getCause() != null ? ex.getCause().toString() : ex.toString();
+            plugin.getLogger().warning("Ошибка спавна через MobsRarity: " + details);
         }
         return null;
     }

@@ -16,6 +16,7 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.SoundCategory;
+import org.bukkit.entity.ArmorStand;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.BlockData;
@@ -64,6 +65,7 @@ public class DungeonManager {
             public void run() {
                 List<ActiveDungeon> expired = new ArrayList<>();
                 for (ActiveDungeon dungeon : activeDungeons.values()) {
+                    spawnOrUpdateTimerDisplay(dungeon);
                     if (dungeon.getRemainingMillis() <= 0L) {
                         expired.add(dungeon);
                     }
@@ -118,7 +120,9 @@ public class DungeonManager {
             return false;
         }
 
-        String rarity = forcedRarity != null ? forcedRarity : rarities.get(ThreadLocalRandom.current().nextInt(rarities.size()));
+        String rarity = forcedRarity != null
+                ? forcedRarity.toLowerCase(Locale.ROOT)
+                : rarities.get(ThreadLocalRandom.current().nextInt(rarities.size()));
         String bossRarity = getNextRarity(rarities, rarity);
 
         Location base = forcedBase != null
@@ -166,6 +170,8 @@ public class DungeonManager {
             return false;
         }
 
+        spawnOrUpdateTimerDisplay(dungeon);
+
         Bukkit.broadcastMessage(prefix() + "Появился данж редкости §e" + rarity + "§r в мире §f" + world.getName()
                 + " §rкоординаты: §bX=" + base.getBlockX() + " Y=" + base.getBlockY() + " Z=" + base.getBlockZ()
                 + " §7(таймер: " + formatDuration(dungeon.getRemainingMillis()) + ")");
@@ -205,25 +211,31 @@ public class DungeonManager {
         }
 
         for (int i = 0; i < mobCount; i++) {
-            EntityType type = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
             Location location = randomLocationInside(dungeon);
-            LivingEntity mob = mobsRarityBridge.spawnRarityMob(location, type, dungeon.getRarity());
-            if (mob == null) {
-                plugin.getLogger().warning("Не удалось заспавнить моба через MobsRarity, данж будет откатан.");
+            SpawnResult mobResult = trySpawnFromPool(location, pool, dungeon.getRarity());
+            if (mobResult == null || mobResult.entity() == null) {
+                plugin.getLogger().warning("Не удалось заспавнить моба через MobsRarity (rarity=" + dungeon.getRarity() + "), данж будет откатан.");
                 return false;
             }
+            LivingEntity mob = mobResult.entity();
+            mob.setCustomName("§6[Данж] §f" + capitalizeRarity(dungeon.getRarity()) + " §7" + prettifyType(mobResult.type()));
+            mob.setCustomNameVisible(true);
             dungeon.getMobs().add(mob.getUniqueId());
             mobToDungeon.put(mob.getUniqueId(), dungeon.getId());
         }
 
         List<EntityType> bossPool = parseEntityTypes(config.getStringList("rarity-mobs." + dungeon.getBossRarity()));
-        EntityType bossType = bossPool.isEmpty() ? EntityType.WITHER_SKELETON : bossPool.get(ThreadLocalRandom.current().nextInt(bossPool.size()));
-        LivingEntity boss = mobsRarityBridge.spawnRarityMob(randomLocationInside(dungeon), bossType, dungeon.getBossRarity());
-        if (boss == null) {
-            plugin.getLogger().warning("Не удалось заспавнить босса через MobsRarity, данж будет откатан.");
+        if (bossPool.isEmpty()) {
+            bossPool = List.of(EntityType.WITHER_SKELETON);
+        }
+        SpawnResult bossResult = trySpawnFromPool(randomLocationInside(dungeon), bossPool, dungeon.getBossRarity());
+        if (bossResult == null || bossResult.entity() == null) {
+            plugin.getLogger().warning("Не удалось заспавнить босса через MobsRarity (rarity=" + dungeon.getBossRarity() + "), данж будет откатан.");
             return false;
         }
-        boss.setCustomName("§cБосс §7(" + dungeon.getBossRarity() + ")");
+        LivingEntity boss = bossResult.entity();
+        EntityType bossType = bossResult.type();
+        boss.setCustomName("§c[Данж-Босс] §f" + capitalizeRarity(dungeon.getBossRarity()) + " §7" + prettifyType(bossType));
         boss.setCustomNameVisible(true);
         dungeon.getMobs().add(boss.getUniqueId());
         mobToDungeon.put(boss.getUniqueId(), dungeon.getId());
@@ -232,7 +244,7 @@ public class DungeonManager {
                 dungeon.getId(), dungeon.getWorld(),
                 dungeon.getMinX(), dungeon.getMinY(), dungeon.getMinZ(),
                 dungeon.getMaxX(), dungeon.getMaxY(), dungeon.getMaxZ(),
-                pool.get(0), dungeon.getRarity(), 3, 45, 3
+                pool.isEmpty() ? EntityType.ZOMBIE : pool.get(0), dungeon.getRarity(), 3, 45, 3
         );
 
         plugin.getLogger().info("Заспавнен данж " + dungeon.getId() + " с " + dungeon.getMobs().size() + " мобами.");
@@ -273,6 +285,7 @@ public class DungeonManager {
         if (despawnMobs) {
             despawnDungeonMobs(dungeon);
         }
+        removeTimerDisplay(dungeon);
         startDecayAndRestore(dungeon);
         plugin.getLogger().info("Данж " + dungeon.getId() + " удален: " + reason);
     }
@@ -481,6 +494,20 @@ public class DungeonManager {
         return new Location(dungeon.getWorld(), x + 0.5, y, z + 0.5);
     }
 
+    private SpawnResult trySpawnFromPool(Location location, List<EntityType> pool, String rarity) {
+        List<EntityType> order = new ArrayList<>(pool);
+        Collections.shuffle(order);
+        for (EntityType type : order) {
+            LivingEntity entity = mobsRarityBridge.spawnRarityMob(location, type, rarity);
+            if (entity != null) {
+                return new SpawnResult(type, entity);
+            }
+        }
+        return null;
+    }
+
+    private record SpawnResult(EntityType type, LivingEntity entity) {}
+
     public Optional<ActiveDungeon> getDungeonByMob(UUID mobId) {
         String id = mobToDungeon.get(mobId);
         return Optional.ofNullable(id).map(activeDungeons::get);
@@ -525,6 +552,60 @@ public class DungeonManager {
         double y = (dungeon.getMinY() + dungeon.getMaxY()) / 2.0;
         double z = (dungeon.getMinZ() + dungeon.getMaxZ()) / 2.0;
         return new Location(dungeon.getWorld(), x, y, z);
+    }
+
+    private void spawnOrUpdateTimerDisplay(ActiveDungeon dungeon) {
+        Location center = centerLocation(dungeon).add(0.0, 2.2, 0.0);
+        String text = "§6[Данж] §f" + dungeon.getId() + " §7" + formatDuration(dungeon.getRemainingMillis());
+
+        Entity existing = dungeon.getTimerDisplayId() == null ? null : Bukkit.getEntity(dungeon.getTimerDisplayId());
+        if (existing instanceof ArmorStand stand && stand.isValid()) {
+            stand.teleport(center);
+            stand.setCustomName(text);
+            return;
+        }
+
+        ArmorStand stand = dungeon.getWorld().spawn(center, ArmorStand.class, as -> {
+            as.setMarker(true);
+            as.setInvisible(true);
+            as.setGravity(false);
+            as.setInvulnerable(true);
+            as.setSilent(true);
+            as.setCustomNameVisible(true);
+            as.setCustomName(text);
+        });
+        dungeon.setTimerDisplayId(stand.getUniqueId());
+    }
+
+    private void removeTimerDisplay(ActiveDungeon dungeon) {
+        if (dungeon.getTimerDisplayId() == null) {
+            return;
+        }
+        Entity entity = Bukkit.getEntity(dungeon.getTimerDisplayId());
+        if (entity != null && entity.isValid()) {
+            entity.remove();
+        }
+        dungeon.setTimerDisplayId(null);
+    }
+
+    private String capitalizeRarity(String rarity) {
+        if (rarity == null || rarity.isBlank()) {
+            return "Unknown";
+        }
+        String lower = rarity.toLowerCase(Locale.ROOT);
+        return Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
+    }
+
+    private String prettifyType(EntityType type) {
+        String[] parts = type.name().toLowerCase(Locale.ROOT).split("_");
+        List<String> pretty = new ArrayList<>();
+        for (String part : parts) {
+            if (part.isBlank()) {
+                continue;
+            }
+            pretty.add(Character.toUpperCase(part.charAt(0)) + part.substring(1));
+        }
+        return String.join(" ", pretty);
     }
 
     private String prefix() {

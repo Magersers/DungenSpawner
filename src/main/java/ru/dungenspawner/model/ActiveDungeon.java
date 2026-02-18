@@ -25,6 +25,7 @@ public class ActiveDungeon {
     private final long expiresAtMillis;
     private final Set<UUID> mobs = new HashSet<>();
     private final Map<Long, SavedBlock> originalBlocks = new HashMap<>();
+    private UUID timerDisplayId;
 
     public ActiveDungeon(String id, String rarity, String bossRarity, World world,
                          int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
@@ -55,6 +56,8 @@ public class ActiveDungeon {
     public long getExpiresAtMillis() { return expiresAtMillis; }
     public Set<UUID> getMobs() { return mobs; }
     public Map<Long, SavedBlock> getOriginalBlocks() { return originalBlocks; }
+    public UUID getTimerDisplayId() { return timerDisplayId; }
+    public void setTimerDisplayId(UUID timerDisplayId) { this.timerDisplayId = timerDisplayId; }
 
     public long getRemainingMillis() {
         return Math.max(0L, expiresAtMillis - System.currentTimeMillis());
