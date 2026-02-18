@@ -554,13 +554,32 @@ public class DungeonManager {
     }
 
     private boolean isValidSpawnSpot(World world, int x, int y, int z) {
-        if (y <= world.getMinHeight() || y >= world.getMaxHeight() - 1) {
+        if (y <= world.getMinHeight() || y >= world.getMaxHeight() - 2) {
             return false;
         }
         Material feet = world.getBlockAt(x, y, z).getType();
         Material head = world.getBlockAt(x, y + 1, z).getType();
         Material below = world.getBlockAt(x, y - 1, z).getType();
-        return feet.isAir() && head.isAir() && below.isSolid();
+        if (!feet.isAir() || !head.isAir() || !below.isSolid()) {
+            return false;
+        }
+
+        return hasCeilingNearby(world, x, y, z);
+    }
+
+    private boolean hasCeilingNearby(World world, int x, int y, int z) {
+        int maxScan = 6;
+        int maxY = world.getMaxHeight() - 1;
+        for (int offset = 2; offset <= maxScan; offset++) {
+            int checkY = y + offset;
+            if (checkY >= maxY) {
+                break;
+            }
+            if (!world.getBlockAt(x, checkY, z).getType().isAir()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String withDungeonPrefix(String originalName, String color) {
