@@ -14,7 +14,11 @@ import com.sk89q.worldedit.session.ClipboardHolder;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Sound;
+import org.bukkit.SoundCategory;
 import org.bukkit.World;
+import org.bukkit.block.Block;
+import org.bukkit.block.data.BlockData;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
@@ -97,8 +101,6 @@ public class DungeonManager {
             return false;
         }
 
-        pasteClipboard(clipboard, base);
-
         BlockVector3 origin = clipboard.getOrigin();
         BlockVector3 min = clipboard.getMinimumPoint();
         BlockVector3 max = clipboard.getMaximumPoint();
@@ -111,15 +113,28 @@ public class DungeonManager {
 
         String id = "dungeon_" + System.currentTimeMillis();
         ActiveDungeon dungeon = new ActiveDungeon(id, rarity, bossRarity, world, minX, minY, minZ, maxX, maxY, maxZ);
+        snapshotRegion(dungeon);
+
+        pasteClipboard(clipboard, base);
         activeDungeons.put(id, dungeon);
 
-        spawnMobsForDungeon(dungeon, base);
+        if (!spawnMobsForDungeon(dungeon)) {
+            activeDungeons.remove(id);
+            restoreOriginalTerrain(dungeon);
+            return false;
+        }
+
         Bukkit.broadcastMessage(prefix() + "Появился данж редкости §e" + rarity + "§r в мире §f" + world.getName());
         return true;
     }
 
-    private void spawnMobsForDungeon(ActiveDungeon dungeon, Location base) {
+    private boolean spawnMobsForDungeon(ActiveDungeon dungeon) {
         FileConfiguration config = plugin.getConfig();
+        if (!mobsRarityBridge.isAvailable()) {
+            plugin.getLogger().warning("MobsRarity API недоступен, спавн данжа отменен.");
+            return false;
+        }
+
         int minMobs = config.getInt("mobs-per-dungeon-min", 10);
         int maxMobs = config.getInt("mobs-per-dungeon-max", 15);
         int mobCount = ThreadLocalRandom.current().nextInt(minMobs, maxMobs + 1);
@@ -132,6 +147,10 @@ public class DungeonManager {
             EntityType type = pool.get(ThreadLocalRandom.current().nextInt(pool.size()));
             Location location = randomLocationInside(dungeon);
             LivingEntity mob = mobsRarityBridge.spawnRarityMob(location, type, dungeon.getRarity());
+            if (mob == null) {
+                plugin.getLogger().warning("Не удалось заспавнить моба через MobsRarity, данж будет откатан.");
+                return false;
+            }
             dungeon.getMobs().add(mob.getUniqueId());
             mobToDungeon.put(mob.getUniqueId(), dungeon.getId());
         }
@@ -139,6 +158,10 @@ public class DungeonManager {
         List<EntityType> bossPool = parseEntityTypes(config.getStringList("rarity-mobs." + dungeon.getBossRarity()));
         EntityType bossType = bossPool.isEmpty() ? EntityType.WITHER_SKELETON : bossPool.get(ThreadLocalRandom.current().nextInt(bossPool.size()));
         LivingEntity boss = mobsRarityBridge.spawnRarityMob(randomLocationInside(dungeon), bossType, dungeon.getBossRarity());
+        if (boss == null) {
+            plugin.getLogger().warning("Не удалось заспавнить босса через MobsRarity, данж будет откатан.");
+            return false;
+        }
         boss.setCustomName("§cБосс §7(" + dungeon.getBossRarity() + ")");
         boss.setCustomNameVisible(true);
         dungeon.getMobs().add(boss.getUniqueId());
@@ -152,6 +175,7 @@ public class DungeonManager {
         );
 
         plugin.getLogger().info("Заспавнен данж " + dungeon.getId() + " с " + dungeon.getMobs().size() + " мобами.");
+        return true;
     }
 
     public void onTrackedMobDeath(UUID mobId, Location deathLocation) {
@@ -175,34 +199,94 @@ public class DungeonManager {
         if (left == 0) {
             activeDungeons.remove(dungeon.getId());
             Bukkit.broadcastMessage(prefix() + "Данж §e" + dungeon.getId() + " §rзачищен!");
-            startDecay(dungeon);
+            startDecayAndRestore(dungeon);
         }
     }
 
-    private void startDecay(ActiveDungeon dungeon) {
-        int steps = plugin.getConfig().getInt("decay-steps", 20);
-        long interval = plugin.getConfig().getLong("decay-interval-ticks", 40L);
+    private void startDecayAndRestore(ActiveDungeon dungeon) {
+        int steps = Math.max(1, plugin.getConfig().getInt("decay-steps", 20));
+        long interval = Math.max(1L, plugin.getConfig().getLong("decay-interval-ticks", 40L));
+        List<Long> keys = new ArrayList<>(dungeon.getOriginalBlocks().keySet());
+        Collections.shuffle(keys);
+
+        if (keys.isEmpty()) {
+            return;
+        }
+
+        int blocksPerStep = Math.max(1, (int) Math.ceil(keys.size() / (double) steps));
 
         new BukkitRunnable() {
-            int current = 0;
+            int index = 0;
+
             @Override
             public void run() {
-                if (current++ >= steps) {
+                if (index >= keys.size()) {
                     cancel();
                     return;
                 }
-                int blocksToBreak = ((dungeon.getMaxX() - dungeon.getMinX() + 1) * (dungeon.getMaxY() - dungeon.getMinY() + 1) * (dungeon.getMaxZ() - dungeon.getMinZ() + 1)) / steps;
-                for (int i = 0; i < blocksToBreak; i++) {
-                    int x = ThreadLocalRandom.current().nextInt(dungeon.getMinX(), dungeon.getMaxX() + 1);
-                    int y = ThreadLocalRandom.current().nextInt(dungeon.getMinY(), dungeon.getMaxY() + 1);
-                    int z = ThreadLocalRandom.current().nextInt(dungeon.getMinZ(), dungeon.getMaxZ() + 1);
-                    Material material = dungeon.getWorld().getBlockAt(x, y, z).getType();
-                    if (material != Material.AIR && material != Material.BEDROCK) {
-                        dungeon.getWorld().getBlockAt(x, y, z).setType(Material.AIR, false);
+
+                World world = dungeon.getWorld();
+                int end = Math.min(index + blocksPerStep, keys.size());
+                for (int i = index; i < end; i++) {
+                    long key = keys.get(i);
+                    int x = unpackX(key);
+                    int y = unpackY(key);
+                    int z = unpackZ(key);
+                    ActiveDungeon.SavedBlock saved = dungeon.getOriginalBlocks().get(key);
+                    if (saved == null || saved.material() == Material.BEDROCK) {
+                        continue;
+                    }
+
+                    Block block = world.getBlockAt(x, y, z);
+                    if (block.getType() != saved.material()) {
+                        block.setBlockData(saved.blockData(), false);
+                        world.playSound(block.getLocation().add(0.5, 0.5, 0.5),
+                                Sound.BLOCK_STONE_BREAK, SoundCategory.BLOCKS, 0.75f, 0.85f + ThreadLocalRandom.current().nextFloat() * 0.35f);
                     }
                 }
+
+                index = end;
             }
         }.runTaskTimer(plugin, interval, interval);
+    }
+
+    private void snapshotRegion(ActiveDungeon dungeon) {
+        World world = dungeon.getWorld();
+        for (int x = dungeon.getMinX(); x <= dungeon.getMaxX(); x++) {
+            for (int y = dungeon.getMinY(); y <= dungeon.getMaxY(); y++) {
+                for (int z = dungeon.getMinZ(); z <= dungeon.getMaxZ(); z++) {
+                    BlockData data = world.getBlockAt(x, y, z).getBlockData().clone();
+                    dungeon.getOriginalBlocks().put(pack(x, y, z), new ActiveDungeon.SavedBlock(data.getMaterial(), data));
+                }
+            }
+        }
+    }
+
+    private void restoreOriginalTerrain(ActiveDungeon dungeon) {
+        for (Map.Entry<Long, ActiveDungeon.SavedBlock> entry : dungeon.getOriginalBlocks().entrySet()) {
+            ActiveDungeon.SavedBlock saved = entry.getValue();
+            if (saved.material() == Material.BEDROCK) {
+                continue;
+            }
+            long key = entry.getKey();
+            dungeon.getWorld().getBlockAt(unpackX(key), unpackY(key), unpackZ(key)).setBlockData(saved.blockData(), false);
+        }
+    }
+
+    private long pack(int x, int y, int z) {
+        return ((long) (x & 0x3FFFFFF) << 38) | ((long) (z & 0x3FFFFFF) << 12) | (y & 0xFFFL);
+    }
+
+    private int unpackX(long packed) {
+        return (int) (packed << 0 >> 38);
+    }
+
+    private int unpackY(long packed) {
+        return (int) (packed & 0xFFFL);
+    }
+
+    private int unpackZ(long packed) {
+        return (int) (packed << 26 >> 38);
     }
 
     private Location findGroundLocation(World world, int centerX, int centerZ, int radius) {

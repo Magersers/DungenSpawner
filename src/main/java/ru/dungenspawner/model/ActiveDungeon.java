@@ -1,9 +1,13 @@
 package ru.dungenspawner.model;
 
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.data.BlockData;
 
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -19,6 +23,7 @@ public class ActiveDungeon {
     private final int maxY;
     private final int maxZ;
     private final Set<UUID> mobs = new HashSet<>();
+    private final Map<Long, SavedBlock> originalBlocks = new HashMap<>();
 
     public ActiveDungeon(String id, String rarity, String bossRarity, World world, int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
         this.id = id;
@@ -44,6 +49,7 @@ public class ActiveDungeon {
     public int getMaxY() { return maxY; }
     public int getMaxZ() { return maxZ; }
     public Set<UUID> getMobs() { return mobs; }
+    public Map<Long, SavedBlock> getOriginalBlocks() { return originalBlocks; }
 
     public boolean contains(Location location) {
         if (location.getWorld() == null || !location.getWorld().equals(world)) {
@@ -53,5 +59,8 @@ public class ActiveDungeon {
         int y = location.getBlockY();
         int z = location.getBlockZ();
         return x >= minX && x <= maxX && y >= minY && y <= maxY && z >= minZ && z <= maxZ;
+    }
+
+    public record SavedBlock(Material material, BlockData blockData) {
     }
 }

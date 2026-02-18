@@ -51,9 +51,10 @@ public class MobsRarityBridge {
                     return livingEntity;
                 }
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable ex) {
+            plugin.getLogger().warning("Ошибка спавна через MobsRarity: " + ex.getMessage());
         }
-        return (LivingEntity) location.getWorld().spawnEntity(location, type);
+        return null;
     }
 
     public void createOrUpdateSpawnZone(String zoneId, World world,
