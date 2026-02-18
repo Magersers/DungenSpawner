@@ -11,8 +11,8 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <java.version>17</java.version>
-        <paper.api.version>1.20.6-R0.1-SNAPSHOT</paper.api.version>
-        <worldedit.version>7.3.0</worldedit.version>
+        <paper.api.version>1.20.4-R0.1-SNAPSHOT</paper.api.version>
+        <worldedit.version>7.2.15</worldedit.version>
     </properties>
 
     <repositories>

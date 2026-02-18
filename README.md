@@ -8,7 +8,7 @@
 
 Автопрофиль Maven переключает зависимости при JDK 21+:
 
-- **JDK 17–20**: `paper-api 1.20.6`, `worldedit-bukkit 7.3.0`, `release=17`
+- **JDK 17–20**: `paper-api 1.20.4`, `worldedit-bukkit 7.2.15`, `release=17`
 - **JDK 21+**: `paper-api 1.21.1`, `worldedit-bukkit 7.4.0`, `release=21`
 
 Это позволяет разработчикам на JDK 17 хотя бы компилировать и проверять проект, а для целевого Paper 1.21.x использовать JDK 21+.
