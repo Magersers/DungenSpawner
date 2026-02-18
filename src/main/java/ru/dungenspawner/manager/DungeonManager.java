@@ -68,6 +68,10 @@ public class DungeonManager {
     }
 
     public boolean spawnDungeon(String forcedRarity) {
+        return spawnDungeon(forcedRarity, null);
+    }
+
+    public boolean spawnDungeon(String forcedRarity, Location forcedBase) {
         FileConfiguration config = plugin.getConfig();
         World world = Bukkit.getWorld(config.getString("world", "world"));
         if (world == null) {
@@ -84,7 +88,9 @@ public class DungeonManager {
         String rarity = forcedRarity != null ? forcedRarity : rarities.get(ThreadLocalRandom.current().nextInt(rarities.size()));
         String bossRarity = getNextRarity(rarities, rarity);
 
-        Location base = findGroundLocation(world,
+        Location base = forcedBase != null
+                ? findGroundLocationNear(forcedBase)
+                : findGroundLocation(world,
                 config.getInt("spawn-center-x", 0),
                 config.getInt("spawn-center-z", 0),
                 config.getInt("spawn-radius", 2500));
@@ -124,7 +130,8 @@ public class DungeonManager {
             return false;
         }
 
-        Bukkit.broadcastMessage(prefix() + "Появился данж редкости §e" + rarity + "§r в мире §f" + world.getName());
+        Bukkit.broadcastMessage(prefix() + "Появился данж редкости §e" + rarity + "§r в мире §f" + world.getName()
+                + " §rкоординаты: §bX=" + base.getBlockX() + " Y=" + base.getBlockY() + " Z=" + base.getBlockZ());
         return true;
     }
 
@@ -300,6 +307,21 @@ public class DungeonManager {
             }
         }
         return null;
+    }
+
+    private Location findGroundLocationNear(Location source) {
+        World world = source.getWorld();
+        if (world == null) {
+            return null;
+        }
+
+        int x = source.getBlockX();
+        int z = source.getBlockZ();
+        int y = world.getHighestBlockYAt(x, z) + 1;
+        if (!world.getBlockAt(x, y - 1, z).getType().isSolid()) {
+            return null;
+        }
+        return new Location(world, x, y, z);
     }
 
 
