@@ -16,6 +16,6 @@ public class DungeonListener implements Listener {
     @EventHandler
     public void onEntityDeath(EntityDeathEvent event) {
         LivingEntity entity = event.getEntity();
-        dungeonManager.onTrackedMobDeath(entity.getUniqueId(), entity.getLocation());
+        dungeonManager.onTrackedMobDeath(entity.getUniqueId(), entity.getKiller());
     }
 }

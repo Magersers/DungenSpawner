@@ -26,7 +26,9 @@ public class DungeonSpawnerPlugin extends JavaPlugin {
 
         getServer().getPluginManager().registerEvents(new DungeonListener(dungeonManager), this);
         if (getCommand("spawndungeon") != null) {
-            getCommand("spawndungeon").setExecutor(new SpawnDungeonCommand(dungeonManager, getConfig()));
+            SpawnDungeonCommand spawnDungeonCommand = new SpawnDungeonCommand(dungeonManager, getConfig());
+            getCommand("spawndungeon").setExecutor(spawnDungeonCommand);
+            getCommand("spawndungeon").setTabCompleter(spawnDungeonCommand);
         }
 
         if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {

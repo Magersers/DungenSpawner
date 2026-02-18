@@ -16,7 +16,6 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.SoundCategory;
-import org.bukkit.entity.ArmorStand;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.BlockData;
@@ -25,6 +24,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.TextDisplay;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import ru.dungenspawner.model.ActiveDungeon;
@@ -41,6 +41,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -64,11 +65,24 @@ public class DungeonManager {
             @Override
             public void run() {
                 List<ActiveDungeon> expired = new ArrayList<>();
+                List<ActiveDungeon> cleared = new ArrayList<>();
                 for (ActiveDungeon dungeon : activeDungeons.values()) {
+                    recalculateAliveMobs(dungeon);
                     spawnOrUpdateTimerDisplay(dungeon);
                     if (dungeon.getRemainingMillis() <= 0L) {
                         expired.add(dungeon);
+                        continue;
                     }
+                    if (dungeon.getMobs().isEmpty()) {
+                        cleared.add(dungeon);
+                    }
+                }
+                for (ActiveDungeon dungeon : cleared) {
+                    String clearers = dungeon.getClearingPlayers().isEmpty()
+                            ? "неизвестно"
+                            : String.join(", ", dungeon.getClearingPlayers());
+                    Bukkit.broadcastMessage(prefix() + "Данж §e" + dungeon.getId() + " §rзачищен игроками: §a" + clearers);
+                    removeDungeon(dungeon, false, "зачищен игроками: " + clearers);
                 }
                 for (ActiveDungeon dungeon : expired) {
                     expireDungeon(dungeon);
@@ -235,7 +249,7 @@ public class DungeonManager {
         }
         LivingEntity boss = bossResult.entity();
         EntityType bossType = bossResult.type();
-        boss.setCustomName("§c[Данж-Босс] §f" + capitalizeRarity(dungeon.getBossRarity()) + " §7" + prettifyType(bossType));
+        boss.setCustomName("§c[Данж] §f" + capitalizeRarity(dungeon.getBossRarity()) + " §7" + prettifyType(bossType));
         boss.setCustomNameVisible(true);
         dungeon.getMobs().add(boss.getUniqueId());
         mobToDungeon.put(boss.getUniqueId(), dungeon.getId());
@@ -251,7 +265,7 @@ public class DungeonManager {
         return true;
     }
 
-    public void onTrackedMobDeath(UUID mobId, Location deathLocation) {
+    public void onTrackedMobDeath(UUID mobId, Player killer) {
         String dungeonId = mobToDungeon.remove(mobId);
         if (dungeonId == null) {
             return;
@@ -261,6 +275,11 @@ public class DungeonManager {
             return;
         }
         dungeon.getMobs().remove(mobId);
+        if (killer != null) {
+            dungeon.getClearingPlayers().add(killer.getName());
+        }
+
+        recalculateAliveMobs(dungeon);
         int left = dungeon.getMobs().size();
 
         for (Player player : Bukkit.getOnlinePlayers()) {
@@ -270,8 +289,11 @@ public class DungeonManager {
         }
 
         if (left == 0) {
-            Bukkit.broadcastMessage(prefix() + "Данж §e" + dungeon.getId() + " §rзачищен!");
-            removeDungeon(dungeon, false, "зачищен игроками");
+            String clearers = dungeon.getClearingPlayers().isEmpty()
+                    ? "неизвестно"
+                    : String.join(", ", dungeon.getClearingPlayers());
+            Bukkit.broadcastMessage(prefix() + "Данж §e" + dungeon.getId() + " §rзачищен игроками: §a" + clearers);
+            removeDungeon(dungeon, false, "зачищен игроками: " + clearers);
         }
     }
 
@@ -359,6 +381,19 @@ public class DungeonManager {
                 }
             }
         }
+    }
+
+
+    private void recalculateAliveMobs(ActiveDungeon dungeon) {
+        Set<UUID> alive = dungeon.getMobs().stream()
+                .filter(mobId -> {
+                    Entity entity = Bukkit.getEntity(mobId);
+                    return entity instanceof LivingEntity living && living.isValid() && !living.isDead();
+                })
+                .collect(Collectors.toSet());
+        dungeon.getMobs().clear();
+        dungeon.getMobs().addAll(alive);
+        mobToDungeon.entrySet().removeIf(entry -> entry.getValue().equals(dungeon.getId()) && !alive.contains(entry.getKey()));
     }
 
     private void restoreOriginalTerrain(ActiveDungeon dungeon) {
@@ -555,26 +590,26 @@ public class DungeonManager {
     }
 
     private void spawnOrUpdateTimerDisplay(ActiveDungeon dungeon) {
-        Location center = centerLocation(dungeon).add(0.0, 2.2, 0.0);
-        String text = "§6[Данж] §f" + dungeon.getId() + " §7" + formatDuration(dungeon.getRemainingMillis());
+        Location center = centerLocation(dungeon).add(0.0, 1.1, 0.0);
+        String text = "§6§lДАНЖ " + dungeon.getId() + " §f" + formatDuration(dungeon.getRemainingMillis());
 
         Entity existing = dungeon.getTimerDisplayId() == null ? null : Bukkit.getEntity(dungeon.getTimerDisplayId());
-        if (existing instanceof ArmorStand stand && stand.isValid()) {
-            stand.teleport(center);
-            stand.setCustomName(text);
+        if (existing instanceof TextDisplay display && display.isValid()) {
+            display.teleport(center);
+            display.setText(text);
             return;
         }
 
-        ArmorStand stand = dungeon.getWorld().spawn(center, ArmorStand.class, as -> {
-            as.setMarker(true);
-            as.setInvisible(true);
-            as.setGravity(false);
-            as.setInvulnerable(true);
-            as.setSilent(true);
-            as.setCustomNameVisible(true);
-            as.setCustomName(text);
+        TextDisplay display = dungeon.getWorld().spawn(center, TextDisplay.class, td -> {
+            td.setBillboard(org.bukkit.entity.Display.Billboard.CENTER);
+            td.setSeeThrough(true);
+            td.setShadowed(true);
+            td.setDefaultBackground(false);
+            td.setText(text);
+            td.setLineWidth(300);
+            td.setViewRange(48f);
         });
-        dungeon.setTimerDisplayId(stand.getUniqueId());
+        dungeon.setTimerDisplayId(display.getUniqueId());
     }
 
     private void removeTimerDisplay(ActiveDungeon dungeon) {

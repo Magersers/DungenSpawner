@@ -7,6 +7,7 @@ import org.bukkit.block.data.BlockData;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -24,6 +25,7 @@ public class ActiveDungeon {
     private final int maxZ;
     private final long expiresAtMillis;
     private final Set<UUID> mobs = new HashSet<>();
+    private final Set<String> clearingPlayers = new LinkedHashSet<>();
     private final Map<Long, SavedBlock> originalBlocks = new HashMap<>();
     private UUID timerDisplayId;
 
@@ -55,6 +57,7 @@ public class ActiveDungeon {
     public int getMaxZ() { return maxZ; }
     public long getExpiresAtMillis() { return expiresAtMillis; }
     public Set<UUID> getMobs() { return mobs; }
+    public Set<String> getClearingPlayers() { return clearingPlayers; }
     public Map<Long, SavedBlock> getOriginalBlocks() { return originalBlocks; }
     public UUID getTimerDisplayId() { return timerDisplayId; }
     public void setTimerDisplayId(UUID timerDisplayId) { this.timerDisplayId = timerDisplayId; }

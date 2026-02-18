@@ -9,6 +9,7 @@ commands:
     description: Spawn dungeon manually
     usage: /spawndungeon [rarity] | /spawndungeon remove <id|all>
     permission: dungenspawner.admin
+    aliases: [spawn]
 permissions:
   dungenspawner.admin:
     default: op
