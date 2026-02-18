@@ -230,8 +230,7 @@ public class DungeonManager {
                 return false;
             }
             LivingEntity mob = mobResult.entity();
-            mob.setCustomName(withDungeonPrefix(mob.getCustomName(), "§6"));
-            mob.setCustomNameVisible(true);
+            prepareDungeonMob(mob, "§6");
             dungeon.getMobs().add(mob.getUniqueId());
             mobToDungeon.put(mob.getUniqueId(), dungeon.getId());
         }
@@ -246,8 +245,7 @@ public class DungeonManager {
             return false;
         }
         LivingEntity boss = bossResult.entity();
-        boss.setCustomName(withDungeonPrefix(boss.getCustomName(), "§c"));
-        boss.setCustomNameVisible(true);
+        prepareDungeonMob(boss, "§c");
         dungeon.getMobs().add(boss.getUniqueId());
         mobToDungeon.put(boss.getUniqueId(), dungeon.getId());
 
@@ -580,6 +578,13 @@ public class DungeonManager {
             }
         }
         return false;
+    }
+
+    private void prepareDungeonMob(LivingEntity entity, String color) {
+        entity.setCustomName(withDungeonPrefix(entity.getCustomName(), color));
+        entity.setCustomNameVisible(true);
+        entity.setRemoveWhenFarAway(false);
+        entity.setPersistent(true);
     }
 
     private String withDungeonPrefix(String originalName, String color) {
