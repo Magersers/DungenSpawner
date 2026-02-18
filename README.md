@@ -12,6 +12,25 @@
 - `class file has wrong version 65.0, should be 61.0`
 - `cannot access org.bukkit...`
 
+## Проверка окружения перед сборкой
+
+```bash
+mvn -v
+java -version
+```
+
+Обе команды должны показывать Java 21+.
+
+Если Maven использует не ту Java, выставите `JAVA_HOME` на JDK 21 перед сборкой.
+
+Пример для Linux/macOS:
+
+```bash
+export JAVA_HOME=/path/to/jdk-21
+export PATH="$JAVA_HOME/bin:$PATH"
+mvn -v
+```
+
 ## Сборка
 
 ```bash
