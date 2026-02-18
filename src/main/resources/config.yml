@@ -1,5 +1,5 @@
 world: world
-schematic-path: plugins/DungenSpawner/schematics/simple-church.schematic
+schematic-path: plugins/WorldEdit/schematics/simple-church.schematic
 spawn-center-x: 0
 spawn-center-z: 0
 spawn-radius: 2500

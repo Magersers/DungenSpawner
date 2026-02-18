@@ -24,3 +24,11 @@ java -version
 ```bash
 mvn -DskipTests package
 ```
+
+## Путь к schematic
+
+По умолчанию используется путь WorldEdit:
+
+- `plugins/WorldEdit/schematics/simple-church.schematic`
+
+Плагин также пробует fallback-пути: локальный `plugins/DungenSpawner/schematics/<file>` и относительный путь от корня сервера.

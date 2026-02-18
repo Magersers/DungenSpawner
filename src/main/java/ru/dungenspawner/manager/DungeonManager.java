@@ -90,9 +90,10 @@ public class DungeonManager {
             return false;
         }
 
-        Clipboard clipboard = loadClipboard(new File(config.getString("schematic-path")));
+        File schematicFile = resolveSchematicFile(config.getString("schematic-path", "simple-church.schematic"));
+        Clipboard clipboard = loadClipboard(schematicFile);
         if (clipboard == null) {
-            plugin.getLogger().warning("Не удалось загрузить схему данжа.");
+            plugin.getLogger().warning("Не удалось загрузить схему данжа. Проверен путь: " + schematicFile.getPath());
             return false;
         }
 
@@ -215,6 +216,31 @@ public class DungeonManager {
             }
         }
         return null;
+    }
+
+
+    private File resolveSchematicFile(String configuredPath) {
+        List<File> candidates = new ArrayList<>();
+
+        File configured = new File(configuredPath);
+        if (configured.isAbsolute()) {
+            candidates.add(configured);
+        } else {
+            candidates.add(configured);
+            candidates.add(new File(Bukkit.getWorldContainer(), configuredPath));
+        }
+
+        String fileName = configured.getName().isBlank() ? "simple-church.schematic" : configured.getName();
+        candidates.add(new File(Bukkit.getWorldContainer(), "plugins/WorldEdit/schematics/" + fileName));
+        candidates.add(new File(plugin.getDataFolder(), "schematics/" + fileName));
+
+        for (File candidate : candidates) {
+            if (candidate.exists() && candidate.isFile()) {
+                return candidate;
+            }
+        }
+
+        return candidates.get(0);
     }
 
     private void pasteClipboard(Clipboard clipboard, Location location) {
