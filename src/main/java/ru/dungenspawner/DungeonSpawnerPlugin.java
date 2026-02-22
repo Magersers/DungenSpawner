@@ -5,6 +5,7 @@ import ru.dungenspawner.command.SpawnDungeonCommand;
 import ru.dungenspawner.listener.DungeonListener;
 import ru.dungenspawner.manager.DungeonManager;
 import ru.dungenspawner.placeholder.DungeonPlaceholderExpansion;
+import ru.dungenspawner.service.EconomyBridge;
 import ru.dungenspawner.service.MobsRarityBridge;
 
 import java.io.File;
@@ -20,7 +21,10 @@ public class DungeonSpawnerPlugin extends JavaPlugin {
         MobsRarityBridge mobsRarityBridge = new MobsRarityBridge(this);
         mobsRarityBridge.hook();
 
-        dungeonManager = new DungeonManager(this, mobsRarityBridge);
+        EconomyBridge economyBridge = new EconomyBridge(this);
+        economyBridge.hook();
+
+        dungeonManager = new DungeonManager(this, mobsRarityBridge, economyBridge);
         dungeonManager.scheduleRandomDailySpawns();
         dungeonManager.startTimerWatcher();
 

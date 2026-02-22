@@ -5,6 +5,12 @@ spawn-center-z: 0
 spawn-radius: 2500
 max-active-dungeons: 5
 dungeon-lifetime-seconds: 600
+
+# Количество автоматически создаваемых данжей в сутки.
+daily-spawns:
+  min: 2
+  max: 3
+
 mobs-per-dungeon-min: 10
 mobs-per-dungeon-max: 15
 rarity-order:
@@ -14,6 +20,16 @@ rarity-order:
   - epic
   - legendary
   - god
+
+# Вес шанса появления данжа каждой редкости (чем больше, тем чаще).
+rarity-spawn-weights:
+  common: 45
+  uncommon: 30
+  rare: 15
+  epic: 7
+  legendary: 2
+  god: 1
+
 rarity-mobs:
   common: [ZOMBIE, SKELETON]
   uncommon: [SKELETON, SPIDER]
@@ -21,6 +37,16 @@ rarity-mobs:
   epic: [WITHER_SKELETON, BOGGED]
   legendary: [BLAZE, PIGLIN_BRUTE]
   god: [WARDEN, EVOKER]
+
+# Награда в шардах за зачистку данжа по редкости.
+rarity-clear-rewards:
+  common: 25
+  uncommon: 40
+  rare: 60
+  epic: 90
+  legendary: 130
+  god: 200
+
 announce-prefix: "§6[Данжи] §r"
 decay-steps: 20
 decay-interval-ticks: 40

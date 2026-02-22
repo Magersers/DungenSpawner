@@ -28,6 +28,7 @@ import org.bukkit.entity.TextDisplay;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import ru.dungenspawner.model.ActiveDungeon;
+import ru.dungenspawner.service.EconomyBridge;
 import ru.dungenspawner.service.MobsRarityBridge;
 
 import java.io.File;
@@ -48,12 +49,14 @@ import java.util.concurrent.ThreadLocalRandom;
 public class DungeonManager {
     private final JavaPlugin plugin;
     private final MobsRarityBridge mobsRarityBridge;
+    private final EconomyBridge economyBridge;
     private final Map<String, ActiveDungeon> activeDungeons = new HashMap<>();
     private final Map<UUID, String> mobToDungeon = new HashMap<>();
 
-    public DungeonManager(JavaPlugin plugin, MobsRarityBridge mobsRarityBridge) {
+    public DungeonManager(JavaPlugin plugin, MobsRarityBridge mobsRarityBridge, EconomyBridge economyBridge) {
         this.plugin = plugin;
         this.mobsRarityBridge = mobsRarityBridge;
+        this.economyBridge = economyBridge;
     }
 
     public void scheduleRandomDailySpawns() {
@@ -78,6 +81,7 @@ public class DungeonManager {
                     }
                 }
                 for (ActiveDungeon dungeon : cleared) {
+                    rewardDungeonClearers(dungeon);
                     String clearMessage = buildClearMessage(dungeon);
                     Bukkit.broadcastMessage(prefix() + clearMessage);
                     removeDungeon(dungeon, false, clearMessage);
@@ -93,7 +97,10 @@ public class DungeonManager {
         new BukkitRunnable() {
             @Override
             public void run() {
-                int eventsCount = ThreadLocalRandom.current().nextInt(2, 4);
+                FileConfiguration config = plugin.getConfig();
+                int minPerDay = Math.max(0, config.getInt("daily-spawns.min", 2));
+                int maxPerDay = Math.max(minPerDay, config.getInt("daily-spawns.max", 3));
+                int eventsCount = ThreadLocalRandom.current().nextInt(minPerDay, maxPerDay + 1);
                 for (int i = 0; i < eventsCount; i++) {
                     long delay = ThreadLocalRandom.current().nextLong(20L, 24L * 60L * 60L * 20L);
                     new BukkitRunnable() {
@@ -134,7 +141,7 @@ public class DungeonManager {
 
         String rarity = forcedRarity != null
                 ? forcedRarity.toLowerCase(Locale.ROOT)
-                : rarities.get(ThreadLocalRandom.current().nextInt(rarities.size()));
+                : pickRandomRarityByWeight(rarities, config);
         String bossRarity = getNextRarity(rarities, rarity);
 
         Location base = forcedBase != null
@@ -272,6 +279,7 @@ public class DungeonManager {
         dungeon.getMobs().remove(mobId);
         if (killer != null) {
             dungeon.getClearingPlayers().add(killer.getName());
+            dungeon.getClearingPlayerIds().putIfAbsent(killer.getName(), killer.getUniqueId());
             dungeon.getKillsByPlayer().merge(killer.getName(), 1, Integer::sum);
         }
 
@@ -285,6 +293,7 @@ public class DungeonManager {
         }
 
         if (left == 0) {
+            rewardDungeonClearers(dungeon);
             String clearMessage = buildClearMessage(dungeon);
             Bukkit.broadcastMessage(prefix() + clearMessage);
             removeDungeon(dungeon, false, clearMessage);
@@ -618,6 +627,58 @@ public class DungeonManager {
         }
 
         return "Данж §e" + dungeon.getId() + " §rзачищен " + who + ": §a" + clearers + " §7| Рейтинг: §f" + rating;
+    }
+
+
+    private String pickRandomRarityByWeight(List<String> rarities, FileConfiguration config) {
+        Map<String, Integer> weights = new HashMap<>();
+        int totalWeight = 0;
+
+        for (String rarity : rarities) {
+            int weight = Math.max(0, config.getInt("rarity-spawn-weights." + rarity, 1));
+            if (weight == 0) {
+                continue;
+            }
+            weights.put(rarity, weight);
+            totalWeight += weight;
+        }
+
+        if (totalWeight <= 0) {
+            return rarities.get(ThreadLocalRandom.current().nextInt(rarities.size()));
+        }
+
+        int roll = ThreadLocalRandom.current().nextInt(totalWeight);
+        int cumulative = 0;
+        for (String rarity : rarities) {
+            Integer weight = weights.get(rarity);
+            if (weight == null) {
+                continue;
+            }
+            cumulative += weight;
+            if (roll < cumulative) {
+                return rarity;
+            }
+        }
+
+        return rarities.get(rarities.size() - 1);
+    }
+
+    private void rewardDungeonClearers(ActiveDungeon dungeon) {
+        int reward = Math.max(0, plugin.getConfig().getInt("rarity-clear-rewards." + dungeon.getRarity(), 0));
+        if (reward <= 0 || !economyBridge.isAvailable()) {
+            return;
+        }
+
+        for (Map.Entry<String, UUID> entry : dungeon.getClearingPlayerIds().entrySet()) {
+            Player player = Bukkit.getPlayer(entry.getValue());
+            if (player == null || !player.isOnline()) {
+                continue;
+            }
+
+            if (economyBridge.depositShards(player, reward)) {
+                player.sendMessage(prefix() + "Вы получили §b" + reward + "§r шардов за зачистку данжа §e" + dungeon.getId());
+            }
+        }
     }
 
     private SpawnResult trySpawnFromPool(Location location, List<EntityType> pool, String rarity) {
