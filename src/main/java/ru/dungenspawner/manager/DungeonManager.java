@@ -665,13 +665,40 @@ public class DungeonManager {
 
     private void rewardDungeonClearers(ActiveDungeon dungeon) {
         int reward = Math.max(0, plugin.getConfig().getInt("rarity-clear-rewards." + dungeon.getRarity(), 0));
-        if (reward <= 0 || !economyBridge.isAvailable()) {
+        int participants = dungeon.getClearingPlayerIds().size();
+        plugin.getLogger().info("[DungeonRewards] Старт начисления: dungeon=" + dungeon.getId()
+                + ", rarity=" + dungeon.getRarity()
+                + ", reward=" + reward
+                + ", participants=" + participants);
+
+        if (reward <= 0) {
+            plugin.getLogger().warning("[DungeonRewards] Начисление пропущено: reward <= 0 для rarity " + dungeon.getRarity());
             return;
         }
 
-        for (UUID playerId : dungeon.getClearingPlayerIds().values()) {
-            economyBridge.depositShards(playerId, reward);
+        if (participants == 0) {
+            plugin.getLogger().warning("[DungeonRewards] Начисление пропущено: нет участников зачистки с UUID.");
+            return;
         }
+
+        if (!economyBridge.isAvailable()) {
+            plugin.getLogger().warning("[DungeonRewards] Начисление пропущено: EconomyService недоступен.");
+            return;
+        }
+
+        int success = 0;
+        int failed = 0;
+        for (UUID playerId : dungeon.getClearingPlayerIds().values()) {
+            if (economyBridge.depositShards(playerId, reward)) {
+                success++;
+            } else {
+                failed++;
+            }
+        }
+
+        plugin.getLogger().info("[DungeonRewards] Начисление завершено: dungeon=" + dungeon.getId()
+                + ", success=" + success
+                + ", failed=" + failed);
     }
 
     private SpawnResult trySpawnFromPool(Location location, List<EntityType> pool, String rarity) {
