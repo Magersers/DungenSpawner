@@ -3,7 +3,7 @@ version: 1.0.0
 main: ru.dungenspawner.DungeonSpawnerPlugin
 api-version: '1.21'
 authors: [Codex]
-softdepend: [WorldEdit, MobsRarity, PlaceholderAPI]
+softdepend: [WorldEdit, MobsRarity, PlaceholderAPI, EcoPlugin, Economy]
 commands:
   spawndungeon:
     description: Spawn dungeon manually

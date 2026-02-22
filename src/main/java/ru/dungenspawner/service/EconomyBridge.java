@@ -1,7 +1,6 @@
 package ru.dungenspawner.service;
 
 import org.bukkit.Bukkit;
-import org.bukkit.entity.Player;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -23,43 +22,44 @@ public class EconomyBridge {
         try {
             Class<?> serviceClass = Class.forName("ru.ecoplugin.economy.api.EconomyService");
             RegisteredServiceProvider<?> rsp = Bukkit.getServicesManager().getRegistration(serviceClass);
-            if (rsp == null) {
-                plugin.getLogger().warning("EconomyService не найден в ServiceManager. Награды шардов отключены.");
-                return;
-            }
-
-            Object provider = rsp.getProvider();
-            if (provider == null) {
-                plugin.getLogger().warning("EconomyService provider вернул null. Награды шардов отключены.");
+            if (rsp == null || rsp.getProvider() == null) {
+                economyService = null;
                 return;
             }
 
             currencyTypeClass = Class.forName("ru.ecoplugin.economy.api.CurrencyType");
             shardsCurrency = Enum.valueOf((Class<Enum>) currencyTypeClass.asSubclass(Enum.class), "SHARDS");
             depositMethod = serviceClass.getMethod("deposit", UUID.class, currencyTypeClass, double.class);
-
-            economyService = provider;
-            plugin.getLogger().info("EconomyService подключен. Награды шардов активированы.");
-        } catch (ClassNotFoundException ex) {
-            plugin.getLogger().warning("Economy API не найден (ru.ecoplugin.economy.api.*). Награды шардов отключены.");
+            economyService = rsp.getProvider();
         } catch (Exception ex) {
-            plugin.getLogger().warning("Не удалось подключить EconomyService: " + ex.getMessage());
+            economyService = null;
+            currencyTypeClass = null;
+            shardsCurrency = null;
+            depositMethod = null;
         }
     }
 
     public boolean isAvailable() {
+        if (economyService == null || depositMethod == null || shardsCurrency == null) {
+            hook();
+        }
         return economyService != null && depositMethod != null && shardsCurrency != null;
     }
 
-    public boolean depositShards(Player player, double amount) {
-        if (player == null || amount <= 0 || !isAvailable()) {
+    public boolean depositShards(UUID playerId, double amount) {
+        if (playerId == null || amount <= 0) {
             return false;
         }
+        if (!isAvailable()) {
+            return false;
+        }
+
         try {
-            depositMethod.invoke(economyService, player.getUniqueId(), shardsCurrency, amount);
-            return true;
+            Object transactionResult = depositMethod.invoke(economyService, playerId, shardsCurrency, amount);
+            return transactionResult != null;
         } catch (Exception ex) {
-            plugin.getLogger().warning("Ошибка выдачи шардов игроку " + player.getName() + ": " + ex.getMessage());
+            plugin.getLogger().warning("Ошибка выдачи шардов игроку " + playerId + ": " + ex.getMessage());
+            economyService = null;
             return false;
         }
     }

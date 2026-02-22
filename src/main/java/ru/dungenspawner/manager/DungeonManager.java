@@ -669,15 +669,8 @@ public class DungeonManager {
             return;
         }
 
-        for (Map.Entry<String, UUID> entry : dungeon.getClearingPlayerIds().entrySet()) {
-            Player player = Bukkit.getPlayer(entry.getValue());
-            if (player == null || !player.isOnline()) {
-                continue;
-            }
-
-            if (economyBridge.depositShards(player, reward)) {
-                player.sendMessage(prefix() + "Вы получили §b" + reward + "§r шардов за зачистку данжа §e" + dungeon.getId());
-            }
+        for (UUID playerId : dungeon.getClearingPlayerIds().values()) {
+            economyBridge.depositShards(playerId, reward);
         }
     }
 
