@@ -179,6 +179,7 @@ public class DungeonManager {
                 minX, minY, minZ, maxX, maxY, maxZ,
                 System.currentTimeMillis() + ttl * 1000L);
         snapshotRegion(dungeon);
+        forceLoadDungeonChunks(dungeon);
 
         pasteClipboard(clipboard, base);
         activeDungeons.put(id, dungeon);
@@ -186,6 +187,7 @@ public class DungeonManager {
         if (!spawnMobsForDungeon(dungeon)) {
             activeDungeons.remove(id);
             restoreOriginalTerrain(dungeon);
+            releaseDungeonChunks(dungeon);
             return false;
         }
 
@@ -311,6 +313,7 @@ public class DungeonManager {
             despawnDungeonMobs(dungeon);
         }
         removeTimerDisplay(dungeon);
+        releaseDungeonChunks(dungeon);
         startDecayAndRestore(dungeon);
         plugin.getLogger().info("Данж " + dungeon.getId() + " удален: " + reason);
     }
@@ -325,6 +328,49 @@ public class DungeonManager {
             dungeon.getMobs().remove(mobId);
             mobToDungeon.remove(mobId);
         }
+    }
+
+    private void forceLoadDungeonChunks(ActiveDungeon dungeon) {
+        World world = dungeon.getWorld();
+        int minChunkX = dungeon.getMinX() >> 4;
+        int maxChunkX = dungeon.getMaxX() >> 4;
+        int minChunkZ = dungeon.getMinZ() >> 4;
+        int maxChunkZ = dungeon.getMaxZ() >> 4;
+
+        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                if (world.addPluginChunkTicket(chunkX, chunkZ, plugin)) {
+                    dungeon.getForcedChunks().add(packChunk(chunkX, chunkZ));
+                }
+            }
+        }
+
+        plugin.getLogger().info("[DungeonChunks] Зафиксированы чанки данжа " + dungeon.getId() + ": " + dungeon.getForcedChunks().size());
+    }
+
+    private void releaseDungeonChunks(ActiveDungeon dungeon) {
+        World world = dungeon.getWorld();
+        for (Long key : Set.copyOf(dungeon.getForcedChunks())) {
+            int chunkX = unpackChunkX(key);
+            int chunkZ = unpackChunkZ(key);
+            world.removePluginChunkTicket(chunkX, chunkZ, plugin);
+        }
+        if (!dungeon.getForcedChunks().isEmpty()) {
+            plugin.getLogger().info("[DungeonChunks] Освобождены чанки данжа " + dungeon.getId() + ": " + dungeon.getForcedChunks().size());
+        }
+        dungeon.getForcedChunks().clear();
+    }
+
+    private long packChunk(int x, int z) {
+        return ((long) x << 32) ^ (z & 0xffffffffL);
+    }
+
+    private int unpackChunkX(long packed) {
+        return (int) (packed >> 32);
+    }
+
+    private int unpackChunkZ(long packed) {
+        return (int) packed;
     }
 
     private void startDecayAndRestore(ActiveDungeon dungeon) {

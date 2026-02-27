@@ -30,6 +30,7 @@ public class ActiveDungeon {
     private final Map<String, UUID> clearingPlayerIds = new LinkedHashMap<>();
     private final Map<String, Integer> killsByPlayer = new LinkedHashMap<>();
     private final Map<Long, SavedBlock> originalBlocks = new HashMap<>();
+    private final Set<Long> forcedChunks = new LinkedHashSet<>();
     private UUID timerDisplayId;
 
     public ActiveDungeon(String id, String rarity, String bossRarity, World world,
@@ -64,6 +65,7 @@ public class ActiveDungeon {
     public Map<String, UUID> getClearingPlayerIds() { return clearingPlayerIds; }
     public Map<String, Integer> getKillsByPlayer() { return killsByPlayer; }
     public Map<Long, SavedBlock> getOriginalBlocks() { return originalBlocks; }
+    public Set<Long> getForcedChunks() { return forcedChunks; }
     public UUID getTimerDisplayId() { return timerDisplayId; }
     public void setTimerDisplayId(UUID timerDisplayId) { this.timerDisplayId = timerDisplayId; }
 
