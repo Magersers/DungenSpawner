@@ -195,7 +195,8 @@ public class DungeonManager {
 
         Bukkit.broadcastMessage(prefix() + "Появился данж редкости §e" + rarity + "§r в мире §f" + world.getName()
                 + " §rкоординаты: §bX=" + base.getBlockX() + " Y=" + base.getBlockY() + " Z=" + base.getBlockZ()
-                + " §7(таймер: " + formatDuration(dungeon.getRemainingMillis()) + ")");
+                + " §7(таймер: " + formatDuration(dungeon.getRemainingMillis()) + ")"
+                + " §8| §7Активные данжи: §e/dunge");
         return true;
     }
 
