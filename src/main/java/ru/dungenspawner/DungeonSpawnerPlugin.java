@@ -1,7 +1,9 @@
 package ru.dungenspawner;
 
 import org.bukkit.plugin.java.JavaPlugin;
+import ru.dungenspawner.command.DungeMenuCommand;
 import ru.dungenspawner.command.SpawnDungeonCommand;
+import ru.dungenspawner.listener.DungeMenuListener;
 import ru.dungenspawner.listener.DungeonListener;
 import ru.dungenspawner.manager.DungeonManager;
 import ru.dungenspawner.placeholder.DungeonPlaceholderExpansion;
@@ -29,10 +31,18 @@ public class DungeonSpawnerPlugin extends JavaPlugin {
         dungeonManager.startTimerWatcher();
 
         getServer().getPluginManager().registerEvents(new DungeonListener(dungeonManager), this);
+
+        DungeMenuCommand dungeMenuCommand = new DungeMenuCommand(dungeonManager);
+        getServer().getPluginManager().registerEvents(new DungeMenuListener(dungeonManager, dungeMenuCommand), this);
+
         if (getCommand("spawndungeon") != null) {
             SpawnDungeonCommand spawnDungeonCommand = new SpawnDungeonCommand(dungeonManager, getConfig());
             getCommand("spawndungeon").setExecutor(spawnDungeonCommand);
             getCommand("spawndungeon").setTabCompleter(spawnDungeonCommand);
+        }
+
+        if (getCommand("dunge") != null) {
+            getCommand("dunge").setExecutor(dungeMenuCommand);
         }
 
         if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {

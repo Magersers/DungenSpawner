@@ -10,6 +10,9 @@ commands:
     usage: /spawndungeon [rarity] | /spawndungeon remove <id|all>
     permission: dungenspawner.admin
     aliases: [spawn]
+  dunge:
+    description: Open active dungeons menu
+    usage: /dunge
 permissions:
   dungenspawner.admin:
     default: op
