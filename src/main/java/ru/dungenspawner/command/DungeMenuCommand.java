@@ -54,6 +54,7 @@ public class DungeMenuCommand implements CommandExecutor {
             inventory.setItem(slot++, buildDungeonItem(dungeon));
         }
 
+        inventory.setItem(8, buildButton(Material.BARRIER, "§cВыход", List.of("§7Закрыть меню")));
         inventory.setItem(size - 1, buildButton(Material.BARRIER, "§cВыход", List.of("§7Закрыть меню")));
         player.openInventory(inventory);
     }
@@ -83,6 +84,7 @@ public class DungeMenuCommand implements CommandExecutor {
         holder.setInventory(inventory);
         inventory.setItem(11, buildButton(Material.LIME_CONCRETE, "§aДа", List.of("§7Телепортироваться рядом с данжем")));
         inventory.setItem(13, buildButton(Material.RED_CONCRETE, "§cНет", List.of("§7Вернуться к списку данжей")));
+        inventory.setItem(15, buildButton(Material.BARRIER, "§cВыход", List.of("§7Закрыть меню")));
         inventory.setItem(26, buildButton(Material.BARRIER, "§cВыход", List.of("§7Закрыть меню")));
         return inventory;
     }
