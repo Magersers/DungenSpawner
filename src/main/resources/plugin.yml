@@ -3,13 +3,16 @@ version: 1.0.0
 main: ru.dungenspawner.DungeonSpawnerPlugin
 api-version: '1.21'
 authors: [Codex]
-softdepend: [WorldEdit, MobsRarity, PlaceholderAPI]
+softdepend: [WorldEdit, MobsRarity, PlaceholderAPI, EcoPlugin, Economy]
 commands:
   spawndungeon:
     description: Spawn dungeon manually
     usage: /spawndungeon [rarity] | /spawndungeon remove <id|all>
     permission: dungenspawner.admin
     aliases: [spawn]
+  dunge:
+    description: Open active dungeons menu
+    usage: /dunge
 permissions:
   dungenspawner.admin:
     default: op

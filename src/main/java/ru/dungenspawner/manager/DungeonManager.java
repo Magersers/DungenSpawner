@@ -28,10 +28,12 @@ import org.bukkit.entity.TextDisplay;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import ru.dungenspawner.model.ActiveDungeon;
+import ru.dungenspawner.service.EconomyBridge;
 import ru.dungenspawner.service.MobsRarityBridge;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -48,16 +50,30 @@ import java.util.concurrent.ThreadLocalRandom;
 public class DungeonManager {
     private final JavaPlugin plugin;
     private final MobsRarityBridge mobsRarityBridge;
+    private final EconomyBridge economyBridge;
     private final Map<String, ActiveDungeon> activeDungeons = new HashMap<>();
     private final Map<UUID, String> mobToDungeon = new HashMap<>();
+    private LocalDate lastAutoSpawnDay;
 
-    public DungeonManager(JavaPlugin plugin, MobsRarityBridge mobsRarityBridge) {
+    public DungeonManager(JavaPlugin plugin, MobsRarityBridge mobsRarityBridge, EconomyBridge economyBridge) {
         this.plugin = plugin;
         this.mobsRarityBridge = mobsRarityBridge;
+        this.economyBridge = economyBridge;
     }
 
     public void scheduleRandomDailySpawns() {
-        scheduleRandomDailySpawns(0L);
+        scheduleDailySpawnsIfNeeded();
+        long checkPeriodTicks = 60L * 20L;
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                try {
+                    scheduleDailySpawnsIfNeeded();
+                } catch (Throwable ex) {
+                    plugin.getLogger().warning("[AutoSpawn] Ошибка планировщика дня: " + ex.getMessage());
+                }
+            }
+        }.runTaskTimer(plugin, checkPeriodTicks, checkPeriodTicks);
     }
 
     public void startTimerWatcher() {
@@ -78,6 +94,7 @@ public class DungeonManager {
                     }
                 }
                 for (ActiveDungeon dungeon : cleared) {
+                    rewardDungeonClearers(dungeon);
                     String clearMessage = buildClearMessage(dungeon);
                     Bukkit.broadcastMessage(prefix() + clearMessage);
                     removeDungeon(dungeon, false, clearMessage);
@@ -89,23 +106,54 @@ public class DungeonManager {
         }.runTaskTimer(plugin, 20L, 20L);
     }
 
-    private void scheduleRandomDailySpawns(long initialDelayTicks) {
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                int eventsCount = ThreadLocalRandom.current().nextInt(2, 4);
-                for (int i = 0; i < eventsCount; i++) {
-                    long delay = ThreadLocalRandom.current().nextLong(20L, 24L * 60L * 60L * 20L);
-                    new BukkitRunnable() {
-                        @Override
-                        public void run() {
-                            spawnDungeon(null);
-                        }
-                    }.runTaskLater(plugin, delay);
-                }
-                scheduleRandomDailySpawns(24L * 60L * 60L * 20L);
+
+    private void scheduleDailySpawnsIfNeeded() {
+        LocalDate today = LocalDate.now();
+        if (today.equals(lastAutoSpawnDay)) {
+            return;
+        }
+
+        lastAutoSpawnDay = today;
+        plugin.getLogger().info("[AutoSpawn] Новый день: " + today + ". Запускаю планирование автоспавнов.");
+        scheduleDailySpawnsBatch();
+    }
+
+    private void scheduleDailySpawnsBatch() {
+        FileConfiguration config = plugin.getConfig();
+        int minPerDay = Math.max(0, config.getInt("daily-spawns.min", 2));
+        int maxPerDay = Math.max(minPerDay, config.getInt("daily-spawns.max", 3));
+        int eventsCount = ThreadLocalRandom.current().nextInt(minPerDay, maxPerDay + 1);
+
+        if (eventsCount <= 0) {
+            plugin.getLogger().info("[AutoSpawn] На сегодня автоспавн данжей отключен (eventsCount=0).");
+            return;
+        }
+
+        long dayTicks = 24L * 60L * 60L * 20L;
+        long fastWindowTicks = 5L * 60L * 20L;
+
+        plugin.getLogger().info("[AutoSpawn] Запланировано автоспавнов на сегодня: " + eventsCount);
+        for (int i = 0; i < eventsCount; i++) {
+            long delay;
+            if (i == 0) {
+                delay = ThreadLocalRandom.current().nextLong(20L, fastWindowTicks + 1);
+            } else {
+                delay = ThreadLocalRandom.current().nextLong(20L, dayTicks + 1);
             }
-        }.runTaskLater(plugin, initialDelayTicks);
+
+            long finalDelay = delay;
+            new BukkitRunnable() {
+                @Override
+                public void run() {
+                    try {
+                        boolean success = spawnDungeon(null);
+                        plugin.getLogger().info("[AutoSpawn] Попытка автоспавна: success=" + success + ", delayTicks=" + finalDelay);
+                    } catch (Throwable ex) {
+                        plugin.getLogger().warning("[AutoSpawn] Ошибка автоспавна: " + ex.getMessage());
+                    }
+                }
+            }.runTaskLater(plugin, delay);
+        }
     }
 
     public boolean spawnDungeon(String forcedRarity) {
@@ -134,7 +182,7 @@ public class DungeonManager {
 
         String rarity = forcedRarity != null
                 ? forcedRarity.toLowerCase(Locale.ROOT)
-                : rarities.get(ThreadLocalRandom.current().nextInt(rarities.size()));
+                : pickRandomRarityByWeight(rarities, config);
         String bossRarity = getNextRarity(rarities, rarity);
 
         Location base = forcedBase != null
@@ -172,6 +220,7 @@ public class DungeonManager {
                 minX, minY, minZ, maxX, maxY, maxZ,
                 System.currentTimeMillis() + ttl * 1000L);
         snapshotRegion(dungeon);
+        forceLoadDungeonChunks(dungeon);
 
         pasteClipboard(clipboard, base);
         activeDungeons.put(id, dungeon);
@@ -179,6 +228,7 @@ public class DungeonManager {
         if (!spawnMobsForDungeon(dungeon)) {
             activeDungeons.remove(id);
             restoreOriginalTerrain(dungeon);
+            releaseDungeonChunks(dungeon);
             return false;
         }
 
@@ -186,7 +236,8 @@ public class DungeonManager {
 
         Bukkit.broadcastMessage(prefix() + "Появился данж редкости §e" + rarity + "§r в мире §f" + world.getName()
                 + " §rкоординаты: §bX=" + base.getBlockX() + " Y=" + base.getBlockY() + " Z=" + base.getBlockZ()
-                + " §7(таймер: " + formatDuration(dungeon.getRemainingMillis()) + ")");
+                + " §7(таймер: " + formatDuration(dungeon.getRemainingMillis()) + ")"
+                + " §8| §7Активные данжи: §e/dunge");
         return true;
     }
 
@@ -272,6 +323,7 @@ public class DungeonManager {
         dungeon.getMobs().remove(mobId);
         if (killer != null) {
             dungeon.getClearingPlayers().add(killer.getName());
+            dungeon.getClearingPlayerIds().putIfAbsent(killer.getName(), killer.getUniqueId());
             dungeon.getKillsByPlayer().merge(killer.getName(), 1, Integer::sum);
         }
 
@@ -285,6 +337,7 @@ public class DungeonManager {
         }
 
         if (left == 0) {
+            rewardDungeonClearers(dungeon);
             String clearMessage = buildClearMessage(dungeon);
             Bukkit.broadcastMessage(prefix() + clearMessage);
             removeDungeon(dungeon, false, clearMessage);
@@ -302,6 +355,7 @@ public class DungeonManager {
             despawnDungeonMobs(dungeon);
         }
         removeTimerDisplay(dungeon);
+        releaseDungeonChunks(dungeon);
         startDecayAndRestore(dungeon);
         plugin.getLogger().info("Данж " + dungeon.getId() + " удален: " + reason);
     }
@@ -316,6 +370,49 @@ public class DungeonManager {
             dungeon.getMobs().remove(mobId);
             mobToDungeon.remove(mobId);
         }
+    }
+
+    private void forceLoadDungeonChunks(ActiveDungeon dungeon) {
+        World world = dungeon.getWorld();
+        int minChunkX = dungeon.getMinX() >> 4;
+        int maxChunkX = dungeon.getMaxX() >> 4;
+        int minChunkZ = dungeon.getMinZ() >> 4;
+        int maxChunkZ = dungeon.getMaxZ() >> 4;
+
+        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                if (world.addPluginChunkTicket(chunkX, chunkZ, plugin)) {
+                    dungeon.getForcedChunks().add(packChunk(chunkX, chunkZ));
+                }
+            }
+        }
+
+        plugin.getLogger().info("[DungeonChunks] Зафиксированы чанки данжа " + dungeon.getId() + ": " + dungeon.getForcedChunks().size());
+    }
+
+    private void releaseDungeonChunks(ActiveDungeon dungeon) {
+        World world = dungeon.getWorld();
+        for (Long key : Set.copyOf(dungeon.getForcedChunks())) {
+            int chunkX = unpackChunkX(key);
+            int chunkZ = unpackChunkZ(key);
+            world.removePluginChunkTicket(chunkX, chunkZ, plugin);
+        }
+        if (!dungeon.getForcedChunks().isEmpty()) {
+            plugin.getLogger().info("[DungeonChunks] Освобождены чанки данжа " + dungeon.getId() + ": " + dungeon.getForcedChunks().size());
+        }
+        dungeon.getForcedChunks().clear();
+    }
+
+    private long packChunk(int x, int z) {
+        return ((long) x << 32) ^ (z & 0xffffffffL);
+    }
+
+    private int unpackChunkX(long packed) {
+        return (int) (packed >> 32);
+    }
+
+    private int unpackChunkZ(long packed) {
+        return (int) packed;
     }
 
     private void startDecayAndRestore(ActiveDungeon dungeon) {
@@ -618,6 +715,78 @@ public class DungeonManager {
         }
 
         return "Данж §e" + dungeon.getId() + " §rзачищен " + who + ": §a" + clearers + " §7| Рейтинг: §f" + rating;
+    }
+
+
+    private String pickRandomRarityByWeight(List<String> rarities, FileConfiguration config) {
+        Map<String, Integer> weights = new HashMap<>();
+        int totalWeight = 0;
+
+        for (String rarity : rarities) {
+            int weight = Math.max(0, config.getInt("rarity-spawn-weights." + rarity, 1));
+            if (weight == 0) {
+                continue;
+            }
+            weights.put(rarity, weight);
+            totalWeight += weight;
+        }
+
+        if (totalWeight <= 0) {
+            return rarities.get(ThreadLocalRandom.current().nextInt(rarities.size()));
+        }
+
+        int roll = ThreadLocalRandom.current().nextInt(totalWeight);
+        int cumulative = 0;
+        for (String rarity : rarities) {
+            Integer weight = weights.get(rarity);
+            if (weight == null) {
+                continue;
+            }
+            cumulative += weight;
+            if (roll < cumulative) {
+                return rarity;
+            }
+        }
+
+        return rarities.get(rarities.size() - 1);
+    }
+
+    private void rewardDungeonClearers(ActiveDungeon dungeon) {
+        int reward = Math.max(0, plugin.getConfig().getInt("rarity-clear-rewards." + dungeon.getRarity(), 0));
+        int participants = dungeon.getClearingPlayerIds().size();
+        plugin.getLogger().info("[DungeonRewards] Старт начисления: dungeon=" + dungeon.getId()
+                + ", rarity=" + dungeon.getRarity()
+                + ", reward=" + reward
+                + ", participants=" + participants);
+
+        if (reward <= 0) {
+            plugin.getLogger().warning("[DungeonRewards] Начисление пропущено: reward <= 0 для rarity " + dungeon.getRarity());
+            return;
+        }
+
+        if (participants == 0) {
+            plugin.getLogger().warning("[DungeonRewards] Начисление пропущено: нет участников зачистки с UUID.");
+            return;
+        }
+
+        if (!economyBridge.isAvailable()) {
+            plugin.getLogger().warning("[DungeonRewards] Начисление пропущено: EconomyService недоступен.");
+            return;
+        }
+
+        int success = 0;
+        int failed = 0;
+        for (UUID playerId : dungeon.getClearingPlayerIds().values()) {
+            if (economyBridge.depositShards(playerId, reward)) {
+                success++;
+            } else {
+                failed++;
+            }
+        }
+
+        plugin.getLogger().info("[DungeonRewards] Начисление завершено: dungeon=" + dungeon.getId()
+                + ", success=" + success
+                + ", failed=" + failed);
     }
 
     private SpawnResult trySpawnFromPool(Location location, List<EntityType> pool, String rarity) {
