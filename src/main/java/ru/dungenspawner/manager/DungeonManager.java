@@ -33,6 +33,7 @@ import ru.dungenspawner.service.MobsRarityBridge;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -52,6 +53,7 @@ public class DungeonManager {
     private final EconomyBridge economyBridge;
     private final Map<String, ActiveDungeon> activeDungeons = new HashMap<>();
     private final Map<UUID, String> mobToDungeon = new HashMap<>();
+    private LocalDate lastAutoSpawnDay;
 
     public DungeonManager(JavaPlugin plugin, MobsRarityBridge mobsRarityBridge, EconomyBridge economyBridge) {
         this.plugin = plugin;
@@ -60,14 +62,18 @@ public class DungeonManager {
     }
 
     public void scheduleRandomDailySpawns() {
-        scheduleDailySpawnsBatch();
-        long dayTicks = 24L * 60L * 60L * 20L;
+        scheduleDailySpawnsIfNeeded();
+        long checkPeriodTicks = 60L * 20L;
         new BukkitRunnable() {
             @Override
             public void run() {
-                scheduleDailySpawnsBatch();
+                try {
+                    scheduleDailySpawnsIfNeeded();
+                } catch (Throwable ex) {
+                    plugin.getLogger().warning("[AutoSpawn] Ошибка планировщика дня: " + ex.getMessage());
+                }
             }
-        }.runTaskTimer(plugin, dayTicks, dayTicks);
+        }.runTaskTimer(plugin, checkPeriodTicks, checkPeriodTicks);
     }
 
     public void startTimerWatcher() {
@@ -100,6 +106,18 @@ public class DungeonManager {
         }.runTaskTimer(plugin, 20L, 20L);
     }
 
+
+    private void scheduleDailySpawnsIfNeeded() {
+        LocalDate today = LocalDate.now();
+        if (today.equals(lastAutoSpawnDay)) {
+            return;
+        }
+
+        lastAutoSpawnDay = today;
+        plugin.getLogger().info("[AutoSpawn] Новый день: " + today + ". Запускаю планирование автоспавнов.");
+        scheduleDailySpawnsBatch();
+    }
+
     private void scheduleDailySpawnsBatch() {
         FileConfiguration config = plugin.getConfig();
         int minPerDay = Math.max(0, config.getInt("daily-spawns.min", 2));
@@ -127,8 +145,12 @@ public class DungeonManager {
             new BukkitRunnable() {
                 @Override
                 public void run() {
-                    boolean success = spawnDungeon(null);
-                    plugin.getLogger().info("[AutoSpawn] Попытка автоспавна: success=" + success + ", delayTicks=" + finalDelay);
+                    try {
+                        boolean success = spawnDungeon(null);
+                        plugin.getLogger().info("[AutoSpawn] Попытка автоспавна: success=" + success + ", delayTicks=" + finalDelay);
+                    } catch (Throwable ex) {
+                        plugin.getLogger().warning("[AutoSpawn] Ошибка автоспавна: " + ex.getMessage());
+                    }
                 }
             }.runTaskLater(plugin, delay);
         }
