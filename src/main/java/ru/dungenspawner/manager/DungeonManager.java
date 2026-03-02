@@ -60,7 +60,14 @@ public class DungeonManager {
     }
 
     public void scheduleRandomDailySpawns() {
-        scheduleRandomDailySpawns(0L);
+        scheduleDailySpawnsBatch();
+        long dayTicks = 24L * 60L * 60L * 20L;
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                scheduleDailySpawnsBatch();
+            }
+        }.runTaskTimer(plugin, dayTicks, dayTicks);
     }
 
     public void startTimerWatcher() {
@@ -93,26 +100,38 @@ public class DungeonManager {
         }.runTaskTimer(plugin, 20L, 20L);
     }
 
-    private void scheduleRandomDailySpawns(long initialDelayTicks) {
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                FileConfiguration config = plugin.getConfig();
-                int minPerDay = Math.max(0, config.getInt("daily-spawns.min", 2));
-                int maxPerDay = Math.max(minPerDay, config.getInt("daily-spawns.max", 3));
-                int eventsCount = ThreadLocalRandom.current().nextInt(minPerDay, maxPerDay + 1);
-                for (int i = 0; i < eventsCount; i++) {
-                    long delay = ThreadLocalRandom.current().nextLong(20L, 24L * 60L * 60L * 20L);
-                    new BukkitRunnable() {
-                        @Override
-                        public void run() {
-                            spawnDungeon(null);
-                        }
-                    }.runTaskLater(plugin, delay);
-                }
-                scheduleRandomDailySpawns(24L * 60L * 60L * 20L);
+    private void scheduleDailySpawnsBatch() {
+        FileConfiguration config = plugin.getConfig();
+        int minPerDay = Math.max(0, config.getInt("daily-spawns.min", 2));
+        int maxPerDay = Math.max(minPerDay, config.getInt("daily-spawns.max", 3));
+        int eventsCount = ThreadLocalRandom.current().nextInt(minPerDay, maxPerDay + 1);
+
+        if (eventsCount <= 0) {
+            plugin.getLogger().info("[AutoSpawn] На сегодня автоспавн данжей отключен (eventsCount=0).");
+            return;
+        }
+
+        long dayTicks = 24L * 60L * 60L * 20L;
+        long fastWindowTicks = 5L * 60L * 20L;
+
+        plugin.getLogger().info("[AutoSpawn] Запланировано автоспавнов на сегодня: " + eventsCount);
+        for (int i = 0; i < eventsCount; i++) {
+            long delay;
+            if (i == 0) {
+                delay = ThreadLocalRandom.current().nextLong(20L, fastWindowTicks + 1);
+            } else {
+                delay = ThreadLocalRandom.current().nextLong(20L, dayTicks + 1);
             }
-        }.runTaskLater(plugin, initialDelayTicks);
+
+            long finalDelay = delay;
+            new BukkitRunnable() {
+                @Override
+                public void run() {
+                    boolean success = spawnDungeon(null);
+                    plugin.getLogger().info("[AutoSpawn] Попытка автоспавна: success=" + success + ", delayTicks=" + finalDelay);
+                }
+            }.runTaskLater(plugin, delay);
+        }
     }
 
     public boolean spawnDungeon(String forcedRarity) {
